@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import logging, json, os, sys, requests, mimetypes
 from optparse import OptionParser
 from random import choice
@@ -119,7 +120,7 @@ class HushfileApi:
             chunkcount = (filesize / chunksize) + 1
 
         ### read first chunk
-        fh = open(filename, 'rb'):
+        fh = open(filename, 'rb')
         logger.info("reading and encrypting first chunk")
         chunkdata = file.read(chunksize)
 
@@ -134,7 +135,7 @@ class HushfileApi:
         }
         
         ### set finishupload ?
-        if chunkcount = 1:
+        if chunkcount == 1:
             payload['finishupload'] = True
         
         ### include deletepassword ?
@@ -166,7 +167,7 @@ class HushfileApi:
                 }
                 
                 ### is this the final chunk ?
-                if chunknumber = chunkcount:
+                if chunknumber == chunkcount:
                     payload['finishupload'] = True
                 else:
                     payload['finishupload'] = False
