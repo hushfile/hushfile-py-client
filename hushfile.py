@@ -39,18 +39,18 @@ class HushfileApi:
     
     def __init__(self):
         ### load config from homedir
-        config = None
+        self.config = None
         configpath = os.path.join(os.path.expanduser("~"),'.hushfilerc')
         
         if os.path.exists(configpath):
             with open(configpath) as f:
-                config = json.loads(f.read())
-            if config is None:
+                self.config = json.loads(f.read())
+            if self.config is None:
                 print ">>> Error reading config, using defaults. Please check %s" % configpath
 
-        if config is None:
+        if self.config is None:
             ### no config found, or error reading config, using defaults
-            config = {
+            self.config = {
                 'server': 'hushfile.it',
                 'deleteable': True,
                 'minpwlen': 40,
@@ -59,7 +59,7 @@ class HushfileApi:
 
     def ServerInfo(self):
         """Implements ServerInfo API call"""
-        r = requests.get("https://%s/api/serverinfo" % config['server'])
+        r = requests.get("https://%s/api/serverinfo" % self.config['server'])
         logger.info("ServerInfo API call reply: %s" % r.json())
         self.serverinfo = r.json()
 
@@ -79,9 +79,9 @@ class HushfileApi:
         chunksize = 1048576
         
         ### generate password and deletepassword
-        password = hfutil.mkpassword(config['minpwlen'],config['maxpwlen'])
+        password = hfutil.mkpassword(self.config['minpwlen'],self.config['maxpwlen'])
         if config['deleteable']:
-            deletepassword = hfutil.mkpassword(config['minpwlen'],config['maxpwlen'])
+            deletepassword = hfutil.mkpassword(self.config['minpwlen'],self.config['maxpwlen'])
         
         ### find mimetype
         mimetypes.init()
@@ -101,7 +101,7 @@ class HushfileApi:
         }
 
         ### add deletepassword if neccesary
-        if config['deleteable']:
+        if self.config['deleteable']:
             metadatadict['deletepassword'] = deletepassword
         
         ### dump json string
@@ -139,12 +139,12 @@ class HushfileApi:
             payload['finishupload'] = True
         
         ### include deletepassword ?
-        if config['deleteable']:
+        if self.config['deleteable']:
             payload['deletepassword'] = deletepassword
         
         ### do the POST
         logger.info("POSTing first chunk and metadata")
-        r = requests.post("https://%s/api/upload" % config['server'], data=payload)
+        r = requests.post("https://%s/api/upload" % self.config['server'], data=payload)
         if r.status_code != 200:
             logger.error("error from server: response code %s" % r.status_code)
             sys.exit(1)
@@ -174,13 +174,13 @@ class HushfileApi:
                 
                 ### do the POST
                 logger.info("POSTing chunk %s of %s" % (chunknumber, chunkcount))
-                r = requests.post("https://%s/api/upload" % config['server'], data=payload)
+                r = requests.post("https://%s/api/upload" % self.config['server'], data=payload)
                 if r.status_code != 200:
                     logger.error("error from server: response code %s" % r.status_code)
                     sys.exit(1)
 
         ### done, return the fileid
-        self.resulturl = ("https://%s/%s#%s" % (config['server'], fileid, password))
+        self.resulturl = ("https://%s/%s#%s" % (self.config['server'], fileid, password))
         logger.info("done, url is %s" % self.resulturl)
 
 
@@ -193,6 +193,10 @@ if __name__ == "__main__":
     usage = "usage: %prog [options] <path or url>"
     parser = OptionParser(usage=usage)
     (options, args) = parser.parse_args()
+    if len(args) == 0:
+        logger.error("Missing argument, -h for help")
+        logger.error(usage)
+        sys.exit(1)
 
     ### initiate hushfile classes
     hf = HushfileApi()
