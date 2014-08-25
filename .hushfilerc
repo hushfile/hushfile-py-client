@@ -1,0 +1,6 @@
+{
+    "server": "hushfile.it",
+    "deleteable": true,
+    "minpwlen": 40,
+    "maxpwlen": 50
+}
