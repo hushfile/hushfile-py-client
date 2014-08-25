@@ -1,13 +1,12 @@
 #!/usr/bin/env python
-import logging, json, os, sys, requests, mimetypes
+import logging, json, os, sys, requests, mimetypes, random, base64
 from optparse import OptionParser
-from random import choice
 from hashlib import md5
 from Crypto.Cipher import AES
 
 class HushfileUtils:
     """Hushfile utilities class"""
-    def mkpassword(minlength=40,maxlength=50):
+    def mkpassword(self, minlength=40, maxlength=50):
         """Return a random password"""
         charsets = [
             'abcdefghijklmnopqrstuvwxyz',
@@ -15,16 +14,16 @@ class HushfileUtils:
             '0123456789',
             '-_',
         ]
-        length=random.randint(minlength,maxlength)
+        length=random.randint(minlength, maxlength)
         pwd = []
-        charset = choice(charsets)
+        charset = random.choice(charsets)
         while len(pwd) < length:
-            pwd.append(choice(charset))
-            charset = choice(list(set(charsets) - set([charset])))
+            pwd.append(random.choice(charset))
+            charset = random.choice(list(set(charsets) - set([charset])))
         return "".join(pwd)
 
 
-    def EVP_ByteToKey(password, salt='Salted', key_len=32, iv_len=16):
+    def EVP_ByteToKey(self, password, salt='Salted', key_len=32, iv_len=16):
         """Derive the key and the IV from the given password and salt."""
         dtot =  md5(password + salt).digest()
         d = [ dtot ]
@@ -32,6 +31,13 @@ class HushfileUtils:
             d.append( md5(d[-1] + password + salt).digest() )
             dtot += d[-1]
         return dtot[:key_len], dtot[key_len:key_len+iv_len]
+
+	def pad_string(self, in_string, block_size=16):
+        '''Pad an input string according to PKCS#7'''
+        in_len = len(in_string)
+        pad_size = block_size - (in_len % block_size)
+        return in_string.ljust(in_len + pad_size, chr(pad_size))
+
 
 
 class HushfileApi:
@@ -61,12 +67,12 @@ class HushfileApi:
         """Implements ServerInfo API call"""
         r = requests.get("https://%s/api/serverinfo" % self.config['server'])
         logger.info("ServerInfo API call reply: %s" % r.json())
-        self.serverinfo = r.json()
+        self.serverinfo = json.loads(r.json())
 
     def UploadFile(self,filepath):
         ### check filesize
         filesize = os.path.getsize(filepath)
-        if filesize > self.serverinfo.max_filesize:
+        if filesize > self.serverinfo['max_filesize']:
             ### file too large for the server
             logger.error("%s: file too large" % filepath)
             logger.error("server https://%s max_filesize is %s bytes, file is %s bytes" % (self.config['server'], hf.serverinfo.max_filesize, os.path.getsize(filepath)))
@@ -80,7 +86,7 @@ class HushfileApi:
         
         ### generate password and deletepassword
         password = hfutil.mkpassword(self.config['minpwlen'],self.config['maxpwlen'])
-        if config['deleteable']:
+        if self.config['deleteable']:
             deletepassword = hfutil.mkpassword(self.config['minpwlen'],self.config['maxpwlen'])
         
         ### find mimetype
@@ -111,7 +117,7 @@ class HushfileApi:
         logger.info("encrypting metadata")
         key, iv = hfutil.EVP_ByteToKey(password)
         aes = AES.new(key, AES.MODE_CBC, iv)
-        metadatacrypt = base64.b64encode(aes.encrypt(metadatajson))
+        metadatacrypt = base64.b64encode(aes.encrypt(hfutil.pad_string(metadatajson)))
         
         ### determine number of chunks
         if chunksize > filesize:
