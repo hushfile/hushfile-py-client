@@ -32,7 +32,7 @@ class HushfileUtils:
             dtot += d[-1]
         return dtot[:key_len], dtot[key_len:key_len+iv_len]
 
-	def pad_string(self, in_string, block_size=16):
+    def pad_string(self, in_string, block_size=16):
         '''Pad an input string according to PKCS#7'''
         in_len = len(in_string)
         pad_size = block_size - (in_len % block_size)
