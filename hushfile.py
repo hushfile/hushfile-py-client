@@ -32,6 +32,7 @@ class HushfileUtils:
             dtot += d[-1]
         return dtot[:key_len], dtot[key_len:key_len+iv_len]
 
+
     def pad_string(self, in_string, block_size=16):
         '''Pad an input string according to PKCS#7'''
         in_len = len(in_string)
@@ -126,12 +127,12 @@ class HushfileApi:
             chunkcount = (filesize / chunksize) + 1
 
         ### read first chunk
-        fh = open(filename, 'rb')
+        fh = open(filepath, 'rb')
         logger.info("reading and encrypting first chunk")
-        chunkdata = file.read(chunksize)
+        chunkdata = fh.read(chunksize)
 
         ### encrypt first chunk
-        cryptochunk = base64.b64encode(aes.encrypt(chunkdata))
+        cryptochunk = base64.b64encode(aes.encrypt(hfutil.pad_string(chunkdata)))
         
         ### prepare to upload the first chunk and the metadata
         payload = {
@@ -156,14 +157,15 @@ class HushfileApi:
             sys.exit(1)
 
         ### get the fileid from the response
-        fileid = r.json['fileid']
+        response = json.loads(r.json())
+        fileid = response['fileid']
         
         ### any more chunks ?
         if chunkcount > 1:
             for chunknumber in range(1,chunkcount):
                 ### read this chunk
-                chunkdata = file.read(chunksize)
-                cryptochunk = base64.b64encode(aes.encrypt(chunkdata))
+                chunkdata = fh.read(chunksize)
+                cryptochunk = base64.b64encode(aes.encrypt(hfutil.pad_string(chunkdata)))
                 
                 payload = {
                     'fileid': fileid,
