@@ -1,8 +1,9 @@
 #!/usr/bin/env python
-import logging, json, os, sys, requests, mimetypes, random, base64
+import logging, json, os, sys, requests, mimetypes, random, base64, getpass
 from optparse import OptionParser
 from hashlib import md5
 from Crypto.Cipher import AES
+from urlparse import urlparse
 
 class HushfileUtils:
     """Hushfile utilities class"""
@@ -23,7 +24,7 @@ class HushfileUtils:
         return "".join(pwd)
 
 
-    def EVP_ByteToKey(self, password, salt='Salted', key_len=32, iv_len=16):
+    def EVP_ByteToKey(self, password, salt='Salted__', key_len=32, iv_len=16):
         """Derive the key and the IV from the given password and salt."""
         dtot =  md5(password + salt).digest()
         d = [ dtot ]
@@ -39,7 +40,13 @@ class HushfileUtils:
         pad_size = block_size - (in_len % block_size)
         return in_string.ljust(in_len + pad_size, chr(pad_size))
 
-
+    def unpad_string(self, in_string, block_size=16):
+        '''Remove the PKCS#7 padding from a text string'''
+        in_len = len(in_string)
+        pad_size = ord(in_string[-1])
+        if pad_size > block_size:
+            raise ValueError('Input is not padded or padding is corrupt')
+        return in_string[:in_len - pad_size]
 
 class HushfileApi:
     """Hushfile API client class"""
@@ -53,7 +60,7 @@ class HushfileApi:
             with open(configpath) as f:
                 self.config = json.loads(f.read())
             if self.config is None:
-                print ">>> Error reading config, using defaults. Please check %s" % configpath
+                logger.warning(">>> Error reading config, using defaults. Please check %s" % configpath)
 
         if self.config is None:
             ### no config found, or error reading config, using defaults
@@ -64,12 +71,35 @@ class HushfileApi:
                 'maxpwlen': 50
             }
 
+
     def ServerInfo(self):
         """Implements ServerInfo API call"""
         r = requests.get("https://%s/api/serverinfo" % self.config['server'])
+        if r.status_code != 200:
+            logger.error("ServerInfo API call failed, response code %s" % r.status_code())
+            sys.exit(1)
         logger.info("ServerInfo API call reply: %s" % r.json())
         self.serverinfo = json.loads(r.json())
 
+
+    def Exists(self,fileid):
+        r = requests.get('https://%s/api/exists?fileid=%s' % (config['server'],fileid))
+        if r.status_code != 200:
+            logger.error("Exists API call failed, response code %s" % r.status_code())
+            sys.exit(1)
+        logger.info("Exists API call reply: %s" % r.json())
+        return(json.loads(r.json()))
+
+
+    def Ip(self,fileid):
+        r = requests.get('https://%s/api/ip?fileid=%s' % (config['server'],fileid))
+        if r.status_code != 200:
+            logger.error("Ip API call failed, response code %s" % r.status_code())
+            sys.exit(1)
+        response = json.loads(r.json())
+        return(split(response['uploadip']))
+
+        
     def UploadFile(self,filepath):
         ### check filesize
         filesize = os.path.getsize(filepath)
@@ -191,19 +221,97 @@ class HushfileApi:
         self.resulturl = ("https://%s/%s#%s" % (self.config['server'], fileid, password))
         logger.info("done, url is %s" % self.resulturl)
 
+    def DownloadFile(self,hushfileurl,destpath=None):
+        ### parse URL
+        url = urlparse(hushfileurl)
+        if not url.fragment:
+            ### no password
+            logger.info("No password found when parsing URL")
+            password = getpass.getpass("Enter hushfile encryption key: ")
+        else:
+            password = url.fragment
 
+        ### replace config servername with the one from the URL
+        config['server'] = url.netloc
+        
+        ### get the fileid
+        fileid = url.path[1:]
+        
+        ### check if fileid is valid
+        existsreply = hf.Exists(fileid)
+        if not existsreply['exists']:
+            logger.error("Fileid %s does not exist on hushfile server %s" % (fileid,config['server']))
+            sys.exit(1)
+
+        ### check if the upload has been finished
+        if not existsreply['finished']:
+            logger.error("Fileid %s exists on hushfile server %s but the upload has not been finished" % (fileid,config['server']))
+            sys.exit(1)
+        
+        ### get the number of chunks
+        chunkcount = existsreply['chunks']
+        
+        ### download metadata for this fileid
+        r = requests.get('https://%s/api/metadata?fileid=%s' % (config['server'],fileid))
+        if r.status_code != 200:
+            logger.error("Metadata download failed, response code %s" % r.status_code())
+            sys.exit(1)
+        
+        ### decrypt metadata
+        key, iv = hfutil.EVP_ByteToKey(password)
+        aes = AES.new(key, AES.MODE_CBC, iv)
+        metadata = hfutil.unpad_string(aes.decrypt(base64.b64decode(r.text)))
+        logger.info("Metadata decrypted: %s" % metadata)
+
+        ### get uploaders IPs
+        iplist = hf.Ip(fileid)
+        
+        ### download first chunk
+        r = requests.get('https://%s/api/file?fileid=%s&chunknumber=%s' % (config['server'],fileid,0))
+        if r.status_code != 200:
+            logger.error("First chunk download failed, response code %s" % r.status_code())
+            sys.exit(1)
+        
+        ### decrypt first chunk
+        chunkdata = hfutil.unpad_string(aes.encrypt(base64.b64decode(r.text)))
+        
+        ### write first chunk to file
+        if not destpath:
+            ### get filename from metadata, write to current directory
+            destpath = json.loads(metadata)['filename']
+        fh = open(destpath,'a')
+        fh.write(chunkdata)
+        
+        ### any more chunks ?
+        if chunkcount > 1:
+            for chunknumber in range(1,chunkcount):
+                r = requests.get('https://%s/api/file?fileid=%s&chunknumber=%s' % (config['server'],fileid,chunknumber))
+                if r.status_code != 200:
+                    logger.error("Chunk %s download failed, response code %s" % (chunknumber,r.status_code()))
+                    sys.exit(1)
+        
+                ### decrypt and write this chunk
+                chunkdata = hfutil.unpad_string(aes.encrypt(base64.b64decode(r.text)))
+                fh.write(chunkdata)
+        
+        ### close file
+        fh.close()
+        logger.info("Wrote file to %s" % destpath)
+        
 if __name__ == "__main__":
     ### configure logging
     logging.basicConfig(level=logging.INFO, datefmt='%m-%d %H:%M', format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
     logger = logging.getLogger('hushfile')
 
-    ### configure optionparser
-    usage = "usage: %prog [options] <path or url>"
-    parser = OptionParser(usage=usage)
+    ### configure optionparser    
+    parser = OptionParser(add_help_option=False)
+    parser.add_option('-h', '--help', dest='help', action='store_true', help='show this help message and exit')
+                  
     (options, args) = parser.parse_args()
-    if len(args) == 0:
-        logger.error("Missing argument, -h for help")
-        logger.error(usage)
+    if options.help or len(args) == 0:
+        parser.print_help()
+        print "upload usage: %prog [options] </path/to/file>"
+        print "download usage: %prog [options] <hushfile url> [/path/to/destination]"
         sys.exit(1)
 
     ### initiate hushfile classes
@@ -213,7 +321,10 @@ if __name__ == "__main__":
     ### check argument
     if args[0][:8] == 'https://':
         logger.info("%s will be downloaded" % args[0])
-        hf.DownloadFile(args[0],args[1])
+        if len(args) == 2:
+            hf.DownloadFile(args[0],args[1])
+        else:
+            hf.DownloadFile(args[0])
     else:
         if not os.path.exists(args[0]):
             logger.error("%s: file not found" % args[0])
