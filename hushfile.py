@@ -83,7 +83,7 @@ class HushfileApi:
 
 
     def Exists(self,fileid):
-        r = requests.get('https://%s/api/exists?fileid=%s' % (config['server'],fileid))
+        r = requests.get('https://%s/api/exists?fileid=%s' % (self.config['server'],fileid))
         if r.status_code != 200:
             logger.error("Exists API call failed, response code %s" % r.status_code())
             sys.exit(1)
@@ -92,12 +92,12 @@ class HushfileApi:
 
 
     def Ip(self,fileid):
-        r = requests.get('https://%s/api/ip?fileid=%s' % (config['server'],fileid))
+        r = requests.get('https://%s/api/ip?fileid=%s' % (self.config['server'],fileid))
         if r.status_code != 200:
             logger.error("Ip API call failed, response code %s" % r.status_code())
             sys.exit(1)
         response = json.loads(r.json())
-        return(split(response['uploadip']))
+        return(response['uploadip'])
 
         
     def UploadFile(self,filepath):
@@ -232,7 +232,7 @@ class HushfileApi:
             password = url.fragment
 
         ### replace config servername with the one from the URL
-        config['server'] = url.netloc
+        self.config['server'] = url.netloc
         
         ### get the fileid
         fileid = url.path[1:]
@@ -240,19 +240,19 @@ class HushfileApi:
         ### check if fileid is valid
         existsreply = hf.Exists(fileid)
         if not existsreply['exists']:
-            logger.error("Fileid %s does not exist on hushfile server %s" % (fileid,config['server']))
+            logger.error("Fileid %s does not exist on hushfile server %s" % (fileid,self.config['server']))
             sys.exit(1)
 
         ### check if the upload has been finished
         if not existsreply['finished']:
-            logger.error("Fileid %s exists on hushfile server %s but the upload has not been finished" % (fileid,config['server']))
+            logger.error("Fileid %s exists on hushfile server %s but the upload has not been finished" % (fileid,self.config['server']))
             sys.exit(1)
         
         ### get the number of chunks
         chunkcount = existsreply['chunks']
         
         ### download metadata for this fileid
-        r = requests.get('https://%s/api/metadata?fileid=%s' % (config['server'],fileid))
+        r = requests.get('https://%s/api/metadata?fileid=%s' % (self.config['server'],fileid))
         if r.status_code != 200:
             logger.error("Metadata download failed, response code %s" % r.status_code())
             sys.exit(1)
@@ -267,13 +267,13 @@ class HushfileApi:
         iplist = hf.Ip(fileid)
         
         ### download first chunk
-        r = requests.get('https://%s/api/file?fileid=%s&chunknumber=%s' % (config['server'],fileid,0))
+        r = requests.get('https://%s/api/file?fileid=%s&chunknumber=%s' % (self.config['server'],fileid,0))
         if r.status_code != 200:
             logger.error("First chunk download failed, response code %s" % r.status_code())
             sys.exit(1)
         
         ### decrypt first chunk
-        chunkdata = hfutil.unpad_string(aes.encrypt(base64.b64decode(r.text)))
+        chunkdata = hfutil.unpad_string(aes.decrypt(base64.b64decode(r.text)))
         
         ### write first chunk to file
         if not destpath:
@@ -285,13 +285,13 @@ class HushfileApi:
         ### any more chunks ?
         if chunkcount > 1:
             for chunknumber in range(1,chunkcount):
-                r = requests.get('https://%s/api/file?fileid=%s&chunknumber=%s' % (config['server'],fileid,chunknumber))
+                r = requests.get('https://%s/api/file?fileid=%s&chunknumber=%s' % (self.config['server'],fileid,chunknumber))
                 if r.status_code != 200:
                     logger.error("Chunk %s download failed, response code %s" % (chunknumber,r.status_code()))
                     sys.exit(1)
         
                 ### decrypt and write this chunk
-                chunkdata = hfutil.unpad_string(aes.encrypt(base64.b64decode(r.text)))
+                chunkdata = hfutil.unpad_string(aes.decrypt(base64.b64decode(r.text)))
                 fh.write(chunkdata)
         
         ### close file
