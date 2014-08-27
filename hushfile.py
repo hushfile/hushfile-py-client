@@ -5,10 +5,11 @@ from hashlib import md5
 from Crypto.Cipher import AES
 from urlparse import urlparse
 
+
 class HushfileUtils:
-    """Hushfile utilities class"""
+    '''Hushfile utilities class'''
     def mkpassword(self, minlength=40, maxlength=50):
-        """Return a random password"""
+        '''Return a random password'''
         charsets = [
             'abcdefghijklmnopqrstuvwxyz',
             'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
@@ -24,33 +25,38 @@ class HushfileUtils:
         return "".join(pwd)
 
 
-    def EVP_ByteToKey(self, password, salt='Salted__', key_len=32, iv_len=16):
-        """Derive the key and the IV from the given password and salt."""
-        dtot =  md5(password + salt).digest()
-        d = [ dtot ]
-        while len(dtot)<(iv_len+key_len):
-            d.append( md5(d[-1] + password + salt).digest() )
-            dtot += d[-1]
-        return dtot[:key_len], dtot[key_len:key_len+iv_len]
+    def get_key_iv(self, password, salt):
+        """This works for AES256/CBC from cryptjs (that hushfile uses)."""
+        key_iv = ""
+        tmp = ""
+        while len(key_iv) < 48:
+            tmp = md5(tmp + password + salt).digest()
+            key_iv += tmp
+        return key_iv[:32], key_iv[32:48]
 
+    def encrypt(self, data, password):
+        # Emulates OpenSSL enc
+        salt = os.urandom(8)
+        key, iv = self.get_key_iv(password, salt)
+        cipher = AES.new(key, mode=AES.MODE_CBC, IV=iv)
+        padlen = 16 - len(data) % 16
+        prefix = "Salted__" + salt
+        return base64.b64encode(prefix + cipher.encrypt(data + padlen * chr(padlen)))
 
-    def pad_string(self, in_string, block_size=16):
-        '''Pad an input string according to PKCS#7'''
-        in_len = len(in_string)
-        pad_size = block_size - (in_len % block_size)
-        return in_string.ljust(in_len + pad_size, chr(pad_size))
+    def decrypt(self, data, password):
+        data = base64.b64decode(data)
+        if len(data) < 16 or data[0:8] != "Salted__":
+            raise ValueError("Cannot decrypt, missing or incomplete salt.")
+        key, iv = self.get_key_iv(password, data[8:16])
+        cipher = AES.new(key, mode=AES.MODE_CBC, IV=iv)
+        buf = cipher.decrypt(data[16:])
+        # Decrypted buffer has padding length as last byte.
+        return buf[:-ord(buf[-1])]
 
-    def unpad_string(self, in_string, block_size=16):
-        '''Remove the PKCS#7 padding from a text string'''
-        in_len = len(in_string)
-        pad_size = ord(in_string[-1])
-        if pad_size > block_size:
-            raise ValueError('Input is not padded or padding is corrupt')
-        return in_string[:in_len - pad_size]
 
 class HushfileApi:
-    """Hushfile API client class"""
-    
+    '''Hushfile API client class'''
+
     def __init__(self):
         ### load config from homedir
         self.config = None
@@ -73,7 +79,7 @@ class HushfileApi:
 
 
     def ServerInfo(self):
-        """Implements ServerInfo API call"""
+        '''Implements ServerInfo API call'''
         r = requests.get("https://%s/api/serverinfo" % self.config['server'])
         if r.status_code != 200:
             logger.error("ServerInfo API call failed, response code %s" % r.status_code())
@@ -82,7 +88,7 @@ class HushfileApi:
         self.serverinfo = json.loads(r.json())
 
 
-    def Exists(self,fileid):
+    def Exists(self, fileid):
         r = requests.get('https://%s/api/exists?fileid=%s' % (self.config['server'],fileid))
         if r.status_code != 200:
             logger.error("Exists API call failed, response code %s" % r.status_code())
@@ -91,7 +97,7 @@ class HushfileApi:
         return(json.loads(r.json()))
 
 
-    def Ip(self,fileid):
+    def Ip(self, fileid):
         r = requests.get('https://%s/api/ip?fileid=%s' % (self.config['server'],fileid))
         if r.status_code != 200:
             logger.error("Ip API call failed, response code %s" % r.status_code())
@@ -100,7 +106,7 @@ class HushfileApi:
         return(response['uploadip'])
 
         
-    def UploadFile(self,filepath):
+    def UploadFile(self, filepath):
         ### check filesize
         filesize = os.path.getsize(filepath)
         if filesize > self.serverinfo['max_filesize']:
@@ -146,9 +152,7 @@ class HushfileApi:
         
         ### encrypt metadata
         logger.info("encrypting metadata")
-        key, iv = hfutil.EVP_ByteToKey(password)
-        aes = AES.new(key, AES.MODE_CBC, iv)
-        metadatacrypt = base64.b64encode(aes.encrypt(hfutil.pad_string(metadatajson)))
+        metadatacrypt = hfutil.encrypt(metadatajson,password)
         
         ### determine number of chunks
         if chunksize > filesize:
@@ -162,7 +166,7 @@ class HushfileApi:
         chunkdata = fh.read(chunksize)
 
         ### encrypt first chunk
-        cryptochunk = base64.b64encode(aes.encrypt(hfutil.pad_string(chunkdata)))
+        cryptochunk = hfutil.encrypt(chunkdata,password)
         
         ### prepare to upload the first chunk and the metadata
         payload = {
@@ -174,7 +178,9 @@ class HushfileApi:
         ### set finishupload ?
         if chunkcount == 1:
             payload['finishupload'] = True
-        
+        else:
+            payload['finishupload'] = False
+
         ### include deletepassword ?
         if self.config['deleteable']:
             payload['deletepassword'] = deletepassword
@@ -183,19 +189,21 @@ class HushfileApi:
         logger.info("POSTing first chunk and metadata")
         r = requests.post("https://%s/api/upload" % self.config['server'], data=payload)
         if r.status_code != 200:
-            logger.error("error from server: response code %s" % r.status_code)
+            logger.error("error from server: response code %s, body: %s" % (r.status_code,r.text))
             sys.exit(1)
 
         ### get the fileid from the response
         response = json.loads(r.json())
         fileid = response['fileid']
         
+        
         ### any more chunks ?
         if chunkcount > 1:
+            uploadpassword = response['uploadpassword']
             for chunknumber in range(1,chunkcount):
                 ### read this chunk
                 chunkdata = fh.read(chunksize)
-                cryptochunk = base64.b64encode(aes.encrypt(hfutil.pad_string(chunkdata)))
+                cryptochunk = hfutil.encrypt(chunkdata,password)
                 
                 payload = {
                     'fileid': fileid,
@@ -214,14 +222,15 @@ class HushfileApi:
                 logger.info("POSTing chunk %s of %s" % (chunknumber, chunkcount))
                 r = requests.post("https://%s/api/upload" % self.config['server'], data=payload)
                 if r.status_code != 200:
-                    logger.error("error from server: response code %s" % r.status_code)
+                    logger.error("error from server: response code %s, body: %s" % (r.status_code,r.text))
                     sys.exit(1)
 
         ### done, return the fileid
         self.resulturl = ("https://%s/%s#%s" % (self.config['server'], fileid, password))
         logger.info("done, url is %s" % self.resulturl)
 
-    def DownloadFile(self,hushfileurl,destpath=None):
+
+    def DownloadFile(self, hushfileurl, destpath=None):
         ### parse URL
         url = urlparse(hushfileurl)
         if not url.fragment:
@@ -254,13 +263,11 @@ class HushfileApi:
         ### download metadata for this fileid
         r = requests.get('https://%s/api/metadata?fileid=%s' % (self.config['server'],fileid))
         if r.status_code != 200:
-            logger.error("Metadata download failed, response code %s" % r.status_code())
+            logger.error("Metadata download failed, response code %s, body: %s" % (r.status_code,r.text))
             sys.exit(1)
         
         ### decrypt metadata
-        key, iv = hfutil.EVP_ByteToKey(password)
-        aes = AES.new(key, AES.MODE_CBC, iv)
-        metadata = hfutil.unpad_string(aes.decrypt(base64.b64decode(r.text)))
+        metadata = hfutil.decrypt(r.text,password)
         logger.info("Metadata decrypted: %s" % metadata)
 
         ### get uploaders IPs
@@ -269,11 +276,11 @@ class HushfileApi:
         ### download first chunk
         r = requests.get('https://%s/api/file?fileid=%s&chunknumber=%s' % (self.config['server'],fileid,0))
         if r.status_code != 200:
-            logger.error("First chunk download failed, response code %s" % r.status_code())
+            logger.error("First chunk download failed, response code %s, body: %s" % (r.status_code,r.text))
             sys.exit(1)
         
         ### decrypt first chunk
-        chunkdata = hfutil.unpad_string(aes.decrypt(base64.b64decode(r.text)))
+        chunkdata = hfutil.decrypt(r.text,password)
         
         ### write first chunk to file
         if not destpath:
@@ -287,16 +294,17 @@ class HushfileApi:
             for chunknumber in range(1,chunkcount):
                 r = requests.get('https://%s/api/file?fileid=%s&chunknumber=%s' % (self.config['server'],fileid,chunknumber))
                 if r.status_code != 200:
-                    logger.error("Chunk %s download failed, response code %s" % (chunknumber,r.status_code()))
+                    logger.error("Chunk %s download failed, response code %s, body: %s" % (chunknumber,r.status_code(),r.text))
                     sys.exit(1)
         
                 ### decrypt and write this chunk
-                chunkdata = hfutil.unpad_string(aes.decrypt(base64.b64decode(r.text)))
+                chunkdata = hfutil.decrypt(r.text,password)
                 fh.write(chunkdata)
         
         ### close file
         fh.close()
         logger.info("Wrote file to %s" % destpath)
+
         
 if __name__ == "__main__":
     ### configure logging
