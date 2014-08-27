@@ -303,7 +303,7 @@ class HushfileApi:
         
         ### close file
         fh.close()
-        logger.info("Wrote file to %s" % destpath)
+        return destpath
 
         
 if __name__ == "__main__":
@@ -330,9 +330,10 @@ if __name__ == "__main__":
     if args[0][:8] == 'https://':
         logger.info("%s will be downloaded" % args[0])
         if len(args) == 2:
-            hf.DownloadFile(args[0],args[1])
+            destpath = hf.DownloadFile(args[0],args[1])
         else:
-            hf.DownloadFile(args[0])
+            destpath = hf.DownloadFile(args[0])
+        print "wrote file to %s" % destpath
     else:
         if not os.path.exists(args[0]):
             logger.error("%s: file not found" % args[0])
