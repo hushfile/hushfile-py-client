@@ -1,11 +1,14 @@
 hushfile-py-client
 ==================
-
 A commandline client for hushfile written in python.
+
 
 API support
 ===========
-This client currently only works with the server running on https://dev.hushfile.it/ until the new API is stable and the new server is in production.
+This client currently only works with the server running on https://dev.hushfile.it/ until 
+the new API is stable and the new server is in production. To make the script use the dev 
+server simply put the .hushfilerc config file in the homedir.
+
 
 Requirements
 ============
@@ -17,6 +20,7 @@ To get SNI support for the https client (neccesary for use with the current http
 - pyOpenSSL
 - ndg-httpsclient
 - pyasn1
+
 
 Usage
 =====
