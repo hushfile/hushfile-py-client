@@ -308,7 +308,7 @@ class HushfileApi:
         
 if __name__ == "__main__":
     ### configure logging
-    logging.basicConfig(level=logging.INFO, datefmt='%m-%d %H:%M', format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
+    logging.basicConfig(level=logging.ERROR, datefmt='%m-%d %H:%M', format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
     logger = logging.getLogger('hushfile')
 
     ### configure optionparser    
