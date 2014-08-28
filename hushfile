@@ -213,7 +213,7 @@ class HushfileApi:
                 }
                 
                 ### is this the final chunk ?
-                if chunknumber == chunkcount:
+                if chunknumber == chunkcount-1:
                     payload['finishupload'] = True
                 else:
                     payload['finishupload'] = False
