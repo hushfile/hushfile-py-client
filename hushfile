@@ -109,10 +109,10 @@ class HushfileApi:
     def UploadFile(self, filepath):
         ### check filesize
         filesize = os.path.getsize(filepath)
-        if filesize > self.serverinfo['max_filesize']:
+        if filesize > self.serverinfo['max_filesize_bytes']:
             ### file too large for the server
             logger.error("%s: file too large" % filepath)
-            logger.error("server https://%s max_filesize is %s bytes, file is %s bytes" % (self.config['server'], hf.serverinfo.max_filesize, os.path.getsize(filepath)))
+            logger.error("server https://%s max_filesize_bytes is %s bytes, file is %s bytes" % (self.config['server'], hf.serverinfo.max_filesize_bytes, os.path.getsize(filepath)))
             sys.exit(1)
             
         ### decide on chunking
