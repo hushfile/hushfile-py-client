@@ -82,7 +82,7 @@ class HushfileApi:
         '''Implements ServerInfo API call'''
         r = requests.get("https://%s/api/serverinfo" % self.config['server'])
         if r.status_code != 200:
-            logger.error("ServerInfo API call failed, response code %s" % r.status_code())
+            logger.error("ServerInfo API call failed, response code %s" % r.status_code)
             sys.exit(1)
         logger.info("ServerInfo API call reply: %s" % r.json())
         self.serverinfo = json.loads(r.json())
@@ -91,7 +91,7 @@ class HushfileApi:
     def Exists(self, fileid):
         r = requests.get('https://%s/api/exists?fileid=%s' % (self.config['server'],fileid))
         if r.status_code != 200:
-            logger.error("Exists API call failed, response code %s" % r.status_code())
+            logger.error("Exists API call failed, response code %s" % r.status_code)
             sys.exit(1)
         logger.info("Exists API call reply: %s" % r.json())
         return(json.loads(r.json()))
@@ -100,7 +100,7 @@ class HushfileApi:
     def Ip(self, fileid):
         r = requests.get('https://%s/api/ip?fileid=%s' % (self.config['server'],fileid))
         if r.status_code != 200:
-            logger.error("Ip API call failed, response code %s" % r.status_code())
+            logger.error("Ip API call failed, response code %s" % r.status_code)
             sys.exit(1)
         response = json.loads(r.json())
         return(response['uploadip'])
@@ -294,7 +294,7 @@ class HushfileApi:
             for chunknumber in range(1,chunkcount):
                 r = requests.get('https://%s/api/file?fileid=%s&chunknumber=%s' % (self.config['server'],fileid,chunknumber))
                 if r.status_code != 200:
-                    logger.error("Chunk %s download failed, response code %s, body: %s" % (chunknumber,r.status_code(),r.text))
+                    logger.error("Chunk %s download failed, response code %s, body: %s" % (chunknumber,r.status_code,r.text))
                     sys.exit(1)
         
                 ### decrypt and write this chunk
