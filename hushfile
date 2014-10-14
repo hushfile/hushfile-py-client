@@ -177,9 +177,9 @@ class HushfileApi:
         
         ### set finishupload ?
         if chunkcount == 1:
-            payload['finishupload'] = True
+            payload['finishupload'] = json.dumps(True)
         else:
-            payload['finishupload'] = False
+            payload['finishupload'] = json.dumps(False)
 
         ### include deletepassword ?
         if self.config['deleteable']:
@@ -214,9 +214,9 @@ class HushfileApi:
                 
                 ### is this the final chunk ?
                 if chunknumber == chunkcount-1:
-                    payload['finishupload'] = True
+                    payload['finishupload'] = json.dumps(True)
                 else:
-                    payload['finishupload'] = False
+                    payload['finishupload'] = json.dumps(False)
                 
                 ### do the POST
                 logger.info("POSTing chunk %s of %s" % (chunknumber, chunkcount))
