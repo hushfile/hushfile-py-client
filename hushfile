@@ -85,7 +85,7 @@ class HushfileApi:
             logger.error("ServerInfo API call failed, response code %s" % r.status_code)
             sys.exit(1)
         logger.info("ServerInfo API call reply: %s" % r.json())
-        self.serverinfo = json.loads(r.json())
+        self.serverinfo = r.json()
 
 
     def Exists(self, fileid):
@@ -94,7 +94,7 @@ class HushfileApi:
             logger.error("Exists API call failed, response code %s" % r.status_code)
             sys.exit(1)
         logger.info("Exists API call reply: %s" % r.json())
-        return(json.loads(r.json()))
+        return r.json()
 
 
     def Ip(self, fileid):
@@ -102,7 +102,7 @@ class HushfileApi:
         if r.status_code != 200:
             logger.error("Ip API call failed, response code %s" % r.status_code)
             sys.exit(1)
-        response = json.loads(r.json())
+        response = r.json()
         return(response['uploadip'])
 
         
@@ -193,7 +193,7 @@ class HushfileApi:
             sys.exit(1)
 
         ### get the fileid from the response
-        response = json.loads(r.json())
+        response = r.json()
         fileid = response['fileid']
         
         
